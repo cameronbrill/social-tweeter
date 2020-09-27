@@ -23,31 +23,6 @@ firebase = firebase.FirebaseApplication(os.getenv('FIREBASE_URL'), None)
 auth = OAuthHandler(ckey, csecret)
 auth.set_access_token(atoken, asecret)
 
-# created_at : The time the status was posted.
-# id : The ID of the status.
-# id_str : The ID of the status as a string.
-# text : The text of the status.
-# entities : The parsed entities of the status such as hashtags, URLs etc.
-# source : The source of the status.
-# source_url : The URL of the source of the status.
-# in_reply_to_status_id : The ID of the status being replied to.
-# in_reply_to_status_id_str : The ID of the status being replied to in as a string.
-# in_reply_to_user_id : The ID of the user being replied to.
-# in_reply_to_user_id_str : The ID of the user being replied to as a string.
-# in_reply_to_screen_name : The screen name of the user being replied to
-# user : The User object of the poster of the status.
-# geo : The geo object of the status.
-# coordinates : The coordinates of the status.
-# place : The place of the status.
-# contributors : The contributors of the status.
-# is_quote_status : Indicates whether the status is a quoted status or not.
-# retweet_count : The number of retweets of the status.
-# favorite_count : The number of likes of the status.
-# favorited : Indicates whether the status has been favourited by the authenticated user or not.
-# retweeted : Indicates whether the status has been retweeted by the authenticated user or not.
-# possibly_sensitive : Indicates whether the status is sensitive or not.
-# lang : The language of the status.
-
 
 def getThread(status_id: int) -> None:
     tweet = twitterAPI.get_status(id=status_id, tweet_mode="extended")
@@ -109,16 +84,6 @@ class CustomStreamListener(StreamListener):
 
     def on_data(self, data) -> bool:
         tweet = json.loads(data)
-        #tweet = {
-        #    "name": tweet["user"]["name"],
-        #    "id":tweet["id"],
-        #    "text": tweet["text"],
-        #    "created_at": tweet["created_at"],
-        #    "in_reply_to_status_id": tweet["in_reply_to_status_id"],
-        #    "location": tweet["user"]["location"],
-        #    "score": 0
-        #    }
-        #firebase.post('/testing/tweets', tweet)
         if tweet["in_reply_to_status_id"]:
             getThread(tweet["in_reply_to_status_id"])
         return(True)
