@@ -23,11 +23,7 @@ firebase = firebase.FirebaseApplication(os.getenv('FIREBASE_URL'), None)
 auth = OAuthHandler(ckey, csecret)
 auth.set_access_token(atoken, asecret)
 
-
-def getThread(status_id: int) -> None:
-    tweet = twitterAPI.get_status(id=status_id, tweet_mode="extended")
-    #Strip out the urls.
-
+def processTweet(tweet):
     if 'urls' in tweet.entities:
         for url in tweet.entities['urls']:
             if url["url"] in tweet.full_text:
@@ -52,7 +48,9 @@ def getThread(status_id: int) -> None:
         for sym in tweet.entities['symbols']:
             if "$"+sym["text"] in tweet.full_text:
                 tweet.full_text=tweet.full_text.replace("$"+sym["text"], '')
+    return tweet
 
+def get_score(tweet):
     url = os.getenv("AZURE_URL")
     querystring = {"subscription-key":os.getenv("SUBSCRIPTION_KEY"),"verbose":"true","show-all-intents":"true","log":"true","query":tweet.full_text}
     payload = ""
@@ -61,9 +59,10 @@ def getThread(status_id: int) -> None:
         'Postman-Token': os.getenv("POSTMAN_TOKEN")
         }
     response = requests.request("GET", url, data=payload, headers=headers, params=querystring)
-    sentiment = json.loads(response.text)
+    return response
 
-    tweet = {
+def strip_tweet_info(tweet, sentiment):
+    return {
         "name": tweet.user.name,
         "user_id": tweet.user.id,
         "id":tweet.id,
@@ -73,10 +72,57 @@ def getThread(status_id: int) -> None:
         "location": tweet.user.location,
         "suicidal-score": sentiment["prediction"]["intents"]["suicidal"]["score"],
         "top-intent": sentiment["prediction"]["topIntent"],
-        "sentiment-score": sentiment["prediction"]["sentiment"]["score"]
+        "sentiment-score": sentiment["prediction"]["sentiment"]["score"],
+        "twitter_url": "https://twitter.com/"+tweet.user.screen_name,
+        "profile_pic": tweet.user.profile_image_url_https
         }
-    firebase.post('/testing/tweets', tweet)
-    firebase.post('/testing/user/'+str(tweet['user_id'])+'/tweets', tweet)
+
+def get_all_tweets(uid):
+    tweets = twitterAPI.user_timeline(user_id=uid, tweet_mode="extended", count=20)
+    uid = str(uid)
+    for tweet in tweets:
+        tweet = processTweet(tweet) 
+        response = get_score(tweet)
+        sentiment = json.loads(response.text)
+        tweet = strip_tweet_info(tweet, sentiment)
+        firebase.post('/testing/no/user/'+uid+"/tweets", tweet)
+    user_score = 1
+    temp = firebase.get('/testing/no/user/'+uid+'/tweets', None)
+    temp = temp[list(temp.keys())[0]]
+    worst_tweet = (temp["text"], temp["suicidal-score"])
+    num_tweets = 1
+    for tweet in firebase.get('/testing/no/user/'+uid+'/tweets', None):
+        tweet = firebase.get('/testing/no/user/'+uid+'/tweets/'+tweet, None)
+        print(tweet)
+        num_tweets+=1
+        user_score+=tweet["suicidal-score"]
+        worst_tweet = (tweet["text"], tweet["suicidal-score"]) if tweet["suicidal-score"]>worst_tweet[1] else worst_tweet
+    user_score /= num_tweets
+    user = {
+        "name": temp['name'],
+        "score": user_score,
+        "worst_tweet": worst_tweet,
+        "twitter_url": temp["twitter_url"],
+        "profile_pic": temp["profile_pic"],
+        "user_id": temp["user_id"],
+        "color": "rgb("+str(user_score*255)+","+str((1-user_score)*255)+",0)"
+    }
+    firebase.post('/testing/user/', user)
+    pass
+
+def getThread(status_id: int) -> None:
+    tweet = twitterAPI.get_status(id=status_id, tweet_mode="extended")
+    #Strip out the urls.
+    tweet = processTweet(tweet)
+
+    response = get_score(tweet)
+
+    sentiment = json.loads(response.text)
+
+    tweet = strip_tweet_info(tweet, sentiment)
+
+    if not firebase.get("/testing/user/", None) or not str(tweet["user_id"]) in list(firebase.get("/testing/no/user/", None).keys()):
+        get_all_tweets(tweet["user_id"])
     if tweet["in_reply_to_status_id"]:
         getThread(tweet["in_reply_to_status_id"])
 
@@ -90,6 +136,7 @@ class CustomStreamListener(StreamListener):
     
     def on_error(self, status):
         print(status)
+
 
 # Set up twitter api objects
 twitterStream = Stream(auth=auth, listener=CustomStreamListener())
